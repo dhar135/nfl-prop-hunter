@@ -8,8 +8,8 @@ st.set_page_config(page_title="NFL Prop Hunter", page_icon="🏈")
 
 # --- CONSTANTS ---
 CURRENT_YEAR = datetime.datetime.now().year
-# Adjust logic if running in Jan/Feb to get previous year's season
 SEASON_YEAR = CURRENT_YEAR if datetime.datetime.now().month > 8 else CURRENT_YEAR - 1
+PLAYER_STATS_WHITELIST = ["player_display_name", "position", ]
 
 # --- DATA LAYER ---
 @st.cache_data(ttl=3600)  # Cache data for 1 hour
@@ -19,10 +19,13 @@ def load_roster_data(season: int) -> pl.DataFrame:
     """
     try:
         # Explicitly fetch only the season we care about to save memory/bandwidth
-        df_pandas = nfl.load_player_stats(seasons=[season])
+        data = nfl.load_player_stats(seasons=[season])
+
+        # Filter needed positions
+        relevant_positions = ["QB", "RB", "WR", "TE"]
         
         # Convert to Polars for performance
-        return df_pandas
+        return data.filter(pl.col("position").is_in(relevant_positions))
     except Exception as e:
         st.error(f"Failed to fetch NFL data: {e}")
         return pl.DataFrame()
@@ -58,27 +61,23 @@ def main():
     )
 
     # 3. Filtering Logic
-    current_week = get_current_nfl_week()
-
-    current_week = 12
+    last_week = get_current_nfl_week() - 1
     
     # Filter using Polars (Very fast)
     # Note: We filter for the specific player AND the current week
     player_stats = df.filter(
-        (pl.col("player_display_name") == selected_player) & 
-        (pl.col("week") == current_week)
+        (pl.col("player_display_name") == selected_player)
     )
 
     # 4. Display Results
     st.divider()
     st.subheader(f"📊 Stats: {selected_player}")
-    st.caption(f"Season: {SEASON_YEAR} | Week: {current_week}")
+    st.caption(f"Season: {SEASON_YEAR}")
 
     if not player_stats.is_empty():
-        # Clean up the view (exclude messy ID columns if desired)
         st.dataframe(player_stats)
     else:
-        st.info(f"No active roster data found for {selected_player} in Week {current_week}.")
+        st.info(f"No active roster data found for {selected_player} in Week {last_week}.")
 
 if __name__ == "__main__":
     main()
