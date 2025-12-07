@@ -36,7 +36,7 @@ def get_player_props() -> list:
     """
     raise NotImplementedError
 
-def get_hit_rate(prop_value_input: float, position_prop: str ,player_stats: pl.DataFrame) -> int:
+def get_hit_rate(prop_value_input: float, position_prop: str ,player_stats: pl.DataFrame, number_of_prev_games: int) -> pl.DataFrame:
     """
     Given: Prop value input and player stats
     
@@ -44,18 +44,14 @@ def get_hit_rate(prop_value_input: float, position_prop: str ,player_stats: pl.D
     """
 
     # Get 5 last games for the given prop
-    last_5_games = player_stats.select(position_prop).tail(5)
+    last_n_games = player_stats.select([position_prop, "week"]).tail(number_of_prev_games)
 
     # Compare the player stat to the prop value
     # 1. (pl.col(position_prop) > prop_value_input) creates a list of Booleans (True/False)
     # 2. .sum() counts the "True" values
     # 3. .item() extracts the single integer result from the DataFrame
-    hit_count = last_5_games.select(
-        (pl.col(position_prop) > prop_value_input).sum() 
-    ).item()
 
-    # Compare the player 
-    return hit_count
+    return last_n_games
 
 # --- UI LAYER ---
 def main():
@@ -100,13 +96,38 @@ def main():
         step=.5
     )
 
+    last_n_games = st.number_input(
+        "Last N Games",
+        step=1
+    )
+
     # Get hit rate for last 5 games after getting value input
-    hit_rate = get_hit_rate(prop_value_input, posititon_prop, player_stats)
+    hit_rate = get_hit_rate(prop_value_input, posititon_prop, player_stats, last_n_games)
+
+    # Define colors (Hex codes)
+    COLOR_OVER = "#4CAF50"  # Green
+    COLOR_UNDER = "#070707" # Red
+
+    # Create a column with hex codes based on the condition
+    hit_rate = hit_rate.with_columns(
+        pl.when(pl.col(posititon_prop) > prop_value_input)
+        .then(pl.lit("#2ca02c")) # Green
+        .otherwise(pl.lit("#d62728")) # Red
+        .alias("color_condition")
+    )
 
     # 3. Display Results
     st.divider()
     st.subheader(f"📊 Stats: {selected_player}")
-    st.write(f"Hit Rate for last 5 games: {hit_rate} / 5")
+    st.write(f"Hit Rate for last {last_n_games} games")
+
+    # Use the dynamic variable 'posititon_prop' for y, and the new color column
+    st.bar_chart(
+        hit_rate, 
+        x="week", 
+        y=posititon_prop, 
+        color="color_condition"
+    )
 
 
     if not player_stats.is_empty():
