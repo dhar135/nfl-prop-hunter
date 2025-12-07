@@ -9,41 +9,34 @@ st.set_page_config(page_title="NFL Prop Hunter", page_icon="🏈")
 # --- CONSTANTS ---
 CURRENT_YEAR = datetime.datetime.now().year
 SEASON_YEAR = CURRENT_YEAR if datetime.datetime.now().month > 8 else CURRENT_YEAR - 1
-PLAYER_STATS_WHITELIST = ["player_display_name", "position", ]
+
+GENERAL_PLAYER_STATS_WHITELIST = ["season", "week", "opponent_team"]
+RELEVANT_POSITIONS = ["QB"]
+QB_STATS_WHITELIST = ["passing_yards"]
 
 # --- DATA LAYER ---
-@st.cache_data(ttl=3600)  # Cache data for 1 hour
-def load_roster_data(season: int) -> pl.DataFrame:
+@st.cache_data(ttl=3600 * 6)  # Cache data for 6 hours
+def load_player_stats(season: int) -> pl.DataFrame:
     """
-    Fetches weekly roster data for a specific season and converts to Polars.
+    Fetches player stats
     """
     try:
         # Explicitly fetch only the season we care about to save memory/bandwidth
-        data = nfl.load_player_stats(seasons=[season])
+        season_data = nfl.load_player_stats(seasons=[season, season - 1])
 
-        # Filter needed positions
-        relevant_positions = ["QB", "RB", "WR", "TE"]
-        
-        # Convert to Polars for performance
-        return data.filter(pl.col("position").is_in(relevant_positions))
+        # Filter relevant positions
+        return season_data.filter(pl.col("position").is_in(RELEVANT_POSITIONS))
     except Exception as e:
         st.error(f"Failed to fetch NFL data: {e}")
         return pl.DataFrame()
-
-def get_current_nfl_week() -> int:
-    """Safely retrieves the current NFL week."""
-    try:
-        return nfl.get_current_week()
-    except Exception:
-        return 1 # Fallback default
 
 # --- UI LAYER ---
 def main():
     st.title("🏈 NFL Prop Hunter")
 
     # 1. Load Data
-    with st.spinner(f"Loading NFL Data for {SEASON_YEAR}..."):
-        df = load_roster_data(SEASON_YEAR)
+    with st.spinner("Loading NFL Data..."):
+        df = load_player_stats(SEASON_YEAR)
 
     if df.is_empty():
         st.warning("No data found. Please check your internet connection or season settings.")
@@ -59,12 +52,8 @@ def main():
         options=unique_players,
         index=0
     )
-
-    # 3. Filtering Logic
-    last_week = get_current_nfl_week() - 1
     
     # Filter using Polars (Very fast)
-    # Note: We filter for the specific player AND the current week
     player_stats = df.filter(
         (pl.col("player_display_name") == selected_player)
     )
@@ -75,9 +64,9 @@ def main():
     st.caption(f"Season: {SEASON_YEAR}")
 
     if not player_stats.is_empty():
-        st.dataframe(player_stats)
+        st.dataframe(player_stats.select(GENERAL_PLAYER_STATS_WHITELIST + QB_STATS_WHITELIST))
     else:
-        st.info(f"No active roster data found for {selected_player} in Week {last_week}.")
+        st.info(f"No active roster data found for {selected_player}")
 
 if __name__ == "__main__":
     main()
